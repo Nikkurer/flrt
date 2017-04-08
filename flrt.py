@@ -26,8 +26,67 @@ arg_parser.add_argument('--file', '-f', action='store', help='Parse saved flrt i
 arg_parser.add_argument('--dir', '-d', metavar='PATH', action='store', help='Parse snap files in directory.')
 
 
+def generate_machine_report(serial, partition_numbers, firmware, type_model):
+    partition_numbers.update({serial: int('0')})
+    partition = 'p{0}'.format(str(partition_numbers.get(serial)))
+    machine_report = {
+        serial: {
+            'plat': 'power',
+            'reportname': serial,
+            'reportType': 'power',
+            partition: {
+                'fw': firmware,
+                'mtm': type_model
+            }
+        }
+    }
+
+    return machine_report
+
+
+def check_partition(report, serial, hostname):
+    for partition in report.get(serial):
+        if isinstance(report[serial].get(partition), dict):
+            if hostname in report[serial][partition].values():
+                return True
+    return False
+
+
+def update_partition(report, par_num, serial, vios_file, os_file, hostname):
+    par_num += 1
+    partition = 'p{0}'.format(str(par_num))
+
+    if os.access(vios_file, os.R_OK):
+        # Open VIOS.level, find version and fill it in dict
+        with open(vios_file, 'r') as vios:
+            vios = re.findall(r'VIOS Level is ([.\d]+)', vios.read().strip())[0]
+            report[serial].update({
+                partition: {
+                    'os': 'vios',
+                    'parnm': hostname,
+                    'vios': vios
+                }
+            })
+
+    elif os.access(os_file, os.R_OK):
+
+        # Open oslevel.info, find version and fill it in dict
+        with open(os_file, 'r') as aix:
+            aix = re.findall(r'(\d{4}-\d{2}-\d{2})', aix.read().strip())[0]
+            report[serial].update({
+                partition: {
+                    'os': 'aix',
+                    'parnm': hostname,
+                    'aix': aix
+                }
+            })
+
+    return report
+
+
 def parse_snaps(snap_dir):
     reports = {}
+    partition_exist = False
     par_num = 0
 
     if os.path.isdir(os.path.expanduser(snap_dir)):
@@ -36,6 +95,7 @@ def parse_snaps(snap_dir):
         vios_file = 'svCollect/VIOS.level'
         general_file = 'general/general.snap'
 
+        # FIXME: wtf? absolute path?
         for file in os.scandir(os.path.expanduser(snap_dir)):
             if file.is_file() and guess_type(file.name)[1] == 'compress':
                 with TemporaryDirectory() as tmp_dir:
@@ -66,34 +126,14 @@ def parse_snaps(snap_dir):
                     # partition_numbers = {serial: partition, serial: partition}
 
                     if serial not in reports:
-                        partition_numbers.update({serial: int('0')})
-                        partition = 'p{0}'.format(str(partition_numbers[serial]))
-                        reports.update({serial: {'plat': 'power', 'reportname': serial, 'reportType': 'power',
-                                                 partition: {'fw': firmware, 'mtm': type_model}}})
+                        machine_report = generate_machine_report(serial, partition_numbers, firmware, type_model)
+                        reports.update(machine_report)
 
-                    partition_exists = False
+                        if not check_partition(machine_report, serial, hostname):
+                            # FIXME: exactly need?
+                            par_num += 1
 
-                    for partition in reports[serial]:
-                        if type(reports[serial][partition]) is dict:
-                            if hostname in reports[serial][partition].values():
-                                partition_exists = True
-
-                    if not partition_exists:
-                        par_num += 1
-                        partition = 'p{0}'.format(str(par_num))
-
-                        if os.access(vios_file, os.R_OK):
-                            # Open VIOS.level, find version and fill it in dict
-                            with open(vios_file, 'r') as vios:
-                                vios = re.findall(r'VIOS Level is ([.\d]+)', vios.read().strip())[0]
-                                reports[serial].update({partition: {'os': 'vios', 'parnm': hostname, 'vios': vios}})
-
-                        elif os.access(os_file, os.R_OK):
-
-                            # Open oslevel.info, find version and fill it in dict
-                            with open(os_file, 'r') as aix:
-                                aix = re.findall(r'(\d{4}-\d{2}-\d{2})', aix.read().strip())[0]
-                                reports[serial].update({partition: {'os': 'aix', 'parnm': hostname, 'aix': aix}})
+                            reports = update_partition(machine_report, par_num, serial, vios_file, os_file, hostname)
 
         par_num += 1
 
