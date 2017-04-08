@@ -106,26 +106,35 @@ def parse_file(filename):
 
     machine = {}
 
-    with open(filename, 'r', encoding='utf-8') as inventory:
-        for line in inventory:
-            line = line.strip()
-            tmp_line = line.split('=')
+    with open(filename, 'r', encoding='utf-8') as file:
+        for line in file:
+            # line = line.strip()
+            tmp_line = line.strip().split('=')
 
             # p0 - server
             # pn (n>0) - LPARs
 
             if tmp_line[0] in inventory_options:
-                machine.update({tmp_line[0]: tmp_line[1]})
+                machine.update({
+                    tmp_line[0]: tmp_line[1]
+                })
 
-            elif re.match(r'p[0-9]*\.', tmp_line[0]):
+            elif re.match('p[0-9]*\.', tmp_line[0]):
                 option = tmp_line[0].split('.')
 
                 if option[0] in machine:
-                    machine[option[0]].update({option[1]: tmp_line[1]})
+                    machine.update({
+                        option[0]: {
+                            option[1]: tmp_line[1]
+                        }
+                    })
 
                 else:
-                    machine.update({option[0]: {}})
-                    machine[option[0]].update({option[1]: tmp_line[1]})
+                    machine.update({
+                        option[0]: {
+                            option[1]: tmp_line[1]
+                        }
+                    })
 
     return machine
 
