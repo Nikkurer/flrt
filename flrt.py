@@ -22,8 +22,8 @@ from tempfile import TemporaryDirectory
 __version__ = '0.21'
 
 arg_parser = argparse.ArgumentParser(description='Flrt if an IBM FLRT URL generator.')
-arg_parser.add_argument('--file', '-f', action='store_const', help='Parse saved flrt inventory file.')
-arg_parser.add_argument('--dir', '-d', action='store_const', help='Parse snap files in directory.')
+arg_parser.add_argument('--file', '-f', action='store', help='Parse saved flrt inventory file.')
+arg_parser.add_argument('--dir', '-d', action='store', help='Parse snap files in directory.')
 
 
 def parse_snaps(snap_dir):
