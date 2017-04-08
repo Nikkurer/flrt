@@ -14,7 +14,7 @@ import re
 import sys
 import argparse
 
-from pprint import pprint as print
+from pprint import pprint
 from mimetypes import guess_type
 from pyunpack import Archive, PatoolError
 from tempfile import TemporaryDirectory
@@ -23,7 +23,7 @@ __version__ = '0.21'
 
 arg_parser = argparse.ArgumentParser(description='Flrt if an IBM FLRT URL generator.')
 arg_parser.add_argument('--file', '-f', action='store', help='Parse saved flrt inventory file.')
-arg_parser.add_argument('--dir', '-d', action='store', help='Parse snap files in directory.')
+arg_parser.add_argument('--dir', '-d', metavar='PATH', action='store', help='Parse snap files in directory.')
 
 
 def parse_snaps(snap_dir):
@@ -38,14 +38,14 @@ def parse_snaps(snap_dir):
 
         for file in os.scandir(os.path.expanduser(snap_dir)):
             if file.is_file() and guess_type(file.name)[1] == 'compress':
-                with TemporaryDirectory() as tmpdir:
+                with TemporaryDirectory() as tmp_dir:
                     try:
-                        print(file)
-                        Archive(file).extractall(tmpdir)
-                        os.chdir(tmpdir)
+                        pprint(file)
+                        Archive(file).extractall(tmp_dir)
+                        os.chdir(tmp_dir)
 
                     except PatoolError:
-                        print("Oops, something wrong with the snap...", file.name)
+                        pprint("Oops, something wrong with the snap...", file.name)
                         continue
 
                     if os.access(general_file, os.R_OK):
@@ -56,15 +56,14 @@ def parse_snaps(snap_dir):
                     sys_vpd = re.findall(r'(System VPD(?:.|\n)*?)(?=Physical)', general_data)
                     type_model = re.findall(r'Machine Type and Model......([\d\w\-]+)', sys_vpd[0])[0]
                     serial = re.findall(r'Cabinet Serial No...([\d\w]+)', sys_vpd[0])[0]
-                    firmware = re.findall((r'sys0!system:([\w\d]+_\d+)'), general_data)[0]
+                    firmware = re.findall(r'sys0!system:([\w\d]+_\d+)', general_data)[0]
 
                     # OS info
                     inet0_data = re.findall(r'(lsattr -El inet0(?:.|\n)*?)(?=lsattr)', general_data)
-                    hostname = re.findall(r'hostname\s+([-\._\w\d]+)(?:\s|\n)', inet0_data[0])[0]
+                    hostname = re.findall(r'hostname\s+([-._\w\d]+)(?:\s|\n)', inet0_data[0])[0]
 
                     # TODO make partition number local for each machine, in second dict max_par{serial:mp, serial;mp}
                     # partition_numbers = {serial: partition, serial: partition}
-
 
                     if serial not in reports:
                         partition_numbers.update({serial: int('0')})
@@ -79,14 +78,14 @@ def parse_snaps(snap_dir):
                             if hostname in reports[serial][partition].values():
                                 partition_exists = True
 
-                    if partition_exists == False:
+                    if not partition_exists:
                         par_num += 1
                         partition = 'p{0}'.format(str(par_num))
 
                         if os.access(vios_file, os.R_OK):
                             # Open VIOS.level, find version and fill it in dict
                             with open(vios_file, 'r') as vios:
-                                vios = re.findall(r'VIOS Level is ([\.\d]+)', vios.read().strip())[0]
+                                vios = re.findall(r'VIOS Level is ([.\d]+)', vios.read().strip())[0]
                                 reports[serial].update({partition: {'os': 'vios', 'parnm': hostname, 'vios': vios}})
 
                         elif os.access(os_file, os.R_OK):
@@ -158,10 +157,10 @@ if __name__ == '__main__':
         try:
             machine = parse_file(args.file)
             query_url = url_gen(machine)
-            print(query_url)
+            pprint(query_url)
             sys.exit(0)
         except Exception as e:
-            print(e)
+            pprint(e)
             sys.exit(1)
 
     if args.dir:
@@ -170,8 +169,10 @@ if __name__ == '__main__':
             reports = parse_snaps(args.dir)
             for machine in reports.keys():
                 query_url = url_gen(reports[machine])
-                print(query_url)
+                pprint(query_url)
                 sys.exit(0)
         except Exception as e:
-            print(e)
+            pprint(e)
             sys.exit(1)
+
+    arg_parser.print_help()
