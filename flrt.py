@@ -9,27 +9,27 @@
 # ---------------------------------------------------------
 
 
-import argparse
 import os
 import re
 import sys
-import pyunpack
+import argparse
+
+from pprint import pprint as print
 from mimetypes import guess_type
-from pyunpack import Archive
+from pyunpack import Archive, PatoolError
 from tempfile import TemporaryDirectory
 
-__version__ = '0.20'
+__version__ = '0.21'
+
+arg_parser = argparse.ArgumentParser(description='Flrt if an IBM FLRT URL generator.')
+arg_parser.add_argument('--file', '-f', action='store_const', help='Parse saved flrt inventory file.')
+arg_parser.add_argument('--dir', '-d', action='store_const', help='Parse snap files in directory.')
 
 
-def usage():
-    print('Flrt if an IBM FLRT URL generator.')
-    print('Usage: %s -f flrt_inv_file - parse saved flrt inventory file' % os.path.basename(sys.argv[0]))
-    print('%s -d snap_dir - parse snap files in directory' % os.path.basename(sys.argv[0]))
+def parse_snaps(snap_dir):
+    reports = {}
+    par_num = 0
 
-    return 0
-
-
-def parse_snaps(snap_dir, reports):
     if os.path.isdir(os.path.expanduser(snap_dir)):
         partition_numbers = {}
         os_file = 'general/oslevel.info'
@@ -44,7 +44,7 @@ def parse_snaps(snap_dir, reports):
                         Archive(file).extractall(tmpdir)
                         os.chdir(tmpdir)
 
-                    except pyunpack.PatoolError:
+                    except PatoolError:
                         print("Oops, something wrong with the snap...", file.name)
                         continue
 
@@ -71,7 +71,6 @@ def parse_snaps(snap_dir, reports):
                         partition = 'p{0}'.format(str(partition_numbers[serial]))
                         reports.update({serial: {'plat': 'power', 'reportname': serial, 'reportType': 'power',
                                                  partition: {'fw': firmware, 'mtm': type_model}}})
-
 
                     partition_exists = False
 
@@ -102,11 +101,13 @@ def parse_snaps(snap_dir, reports):
     return reports
 
 
-def parse_file(args, machine):
+def parse_file(filename):
     # Known FLRT inventory options
     inventory_options = ['reportname', 'plat', 'reportType', 'format']
 
-    with open(args.file, 'r', encoding='utf-8') as inventory:
+    machine = {}
+
+    with open(filename, 'r', encoding='utf-8') as inventory:
         for line in inventory:
             line = line.strip()
             tmp_line = line.split('=')
@@ -130,49 +131,47 @@ def parse_file(args, machine):
     return machine
 
 
+# FIXME: нужно переименовать machine
 def url_gen(machine):
     url = 'http://www14.software.ibm.com/webapp/set2/flrt/query?'
-    format = 'format=html'
-    for key in machine:
+    query_type = 'format=html'
+    for key, value in machine.items():
 
         if key == 'format':
             continue
 
-        elif type(machine[key]) is str:
-            url = url + format + '&' + key + '=' + machine[key]
+        elif isinstance(value, str):
+            url = '{}{}&{}={}'.format(url, query_type, key, value)
 
-        elif type(machine[key]) is dict:
-            for option in machine[key]:
-                url = url + format + '&' + key + '.' + option + '=' + machine[key][option]
-
+        elif isinstance(value, dict):
+            for option_name, option_value in value.items():
+                url = '{}{}&{}.{}={}'.format(url, query_type, key, option_name, option_value)
     return url
 
 
-def main():
-    # TODO delete declaration of machine and reports?
-    machine = {}
-    reports = {}
+if __name__ == '__main__':
 
-    a_parser = argparse.ArgumentParser(__version__)
-    a_parser.add_argument('-f', '--file', help='path to FLRT inventory file')
-    a_parser.add_argument('-d', '--dir', help='path to directory with snaps')
-    # TODO add a format choice
-    # a_parser.add_argument('-m', '--format', type=str, choices=[text, html], help='format of report')
-    args = a_parser.parse_args()
+    args = arg_parser.parse_args()
 
     if args.file:
-        machine = parse_file(args, machine)
-        query_url = url_gen(machine)
-        print(query_url)
+        # FIXME: нужно переименовать machine
+        try:
+            machine = parse_file(args.file)
+            query_url = url_gen(machine)
+            print(query_url)
+            sys.exit(0)
+        except Exception as e:
+            print(e)
+            sys.exit(1)
 
     if args.dir:
-        reports = parse_snaps(args.dir, reports)
-        for machine in reports.keys():
-            query_url = url_gen(reports[machine])
-            print(query_url)
-
-    return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())
+        # FIXME: нужно переименовать machine и reports
+        try:
+            reports = parse_snaps(args.dir)
+            for machine in reports.keys():
+                query_url = url_gen(reports[machine])
+                print(query_url)
+                sys.exit(0)
+        except Exception as e:
+            print(e)
+            sys.exit(1)
